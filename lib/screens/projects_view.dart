@@ -1,29 +1,118 @@
 import 'package:flutter/material.dart';
+
 import '../models/project_finance.dart';
 import '../utils/helpers.dart';
 import '../widgets/shared_widgets.dart';
 
-class ProjectsView extends StatelessWidget {
-  const ProjectsView({super.key, required this.projects});
+enum ProjectFilter { all, active, waitingPayment, highRisk }
+
+class ProjectsView extends StatefulWidget {
+  const ProjectsView({
+    super.key,
+    required this.projects,
+    required this.onAddProject,
+    required this.onUpdateProject,
+    required this.onDeleteProject,
+  });
 
   final List<ProjectFinance> projects;
+  final ValueChanged<ProjectFinance> onAddProject;
+  final ValueChanged<ProjectFinance> onUpdateProject;
+  final ValueChanged<ProjectFinance> onDeleteProject;
+
+  @override
+  State<ProjectsView> createState() => _ProjectsViewState();
+}
+
+class _ProjectsViewState extends State<ProjectsView> {
+  ProjectFilter _filter = ProjectFilter.all;
+
+  List<ProjectFinance> get _filteredProjects {
+    return switch (_filter) {
+      ProjectFilter.all => widget.projects,
+      ProjectFilter.active => widget.projects
+          .where((project) => project.progress < 1 && project.remaining > 0)
+          .toList(),
+      ProjectFilter.waitingPayment =>
+        widget.projects.where((project) => project.remaining > 0).toList(),
+      ProjectFilter.highRisk => widget.projects
+          .where((project) => project.risk == ProjectRisk.high)
+          .toList(),
+    };
+  }
+
+  Future<void> _openCreateProject() async {
+    final project = await showDialog<ProjectFinance>(
+      context: context,
+      builder: (context) => const ProjectEditorDialog(),
+    );
+    if (project != null) widget.onAddProject(project);
+  }
+
+  Future<void> _openEditProject(ProjectFinance project) async {
+    final edited = await showDialog<ProjectFinance>(
+      context: context,
+      builder: (context) => ProjectEditorDialog(project: project),
+    );
+    if (edited != null) widget.onUpdateProject(edited);
+  }
+
+  Future<void> _confirmDelete(ProjectFinance project) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Xóa dự án?'),
+        content: Text('Dự án "${project.name}" sẽ bị xóa khỏi danh sách.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) widget.onDeleteProject(project);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final filteredProjects = _filteredProjects;
+
     return AppPage(
       title: 'Dự án',
-      subtitle: 'Thu chi và tiến độ theo hợp đồng',
+      subtitle: 'Thêm, sửa, xóa và theo dõi tiến độ hợp đồng',
       action: FilledButton.icon(
-        onPressed: () {},
+        onPressed: _openCreateProject,
         icon: const Icon(Icons.add),
         label: const Text('Mới'),
       ),
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         children: [
-          const FilterChips(),
+          FilterChips(
+            selected: _filter,
+            onChanged: (filter) => setState(() => _filter = filter),
+          ),
           const SizedBox(height: 16),
-          ...projects.map((project) => ProjectDetailPanel(project: project)),
+          if (filteredProjects.isEmpty)
+            const EmptyState(
+              icon: Icons.search_off,
+              title: 'Không có dự án phù hợp',
+              message: 'Đổi bộ lọc hoặc tạo dự án mới để tiếp tục.',
+            )
+          else
+            ...filteredProjects.map(
+              (project) => ProjectDetailPanel(
+                project: project,
+                onEdit: () => _openEditProject(project),
+                onDelete: () => _confirmDelete(project),
+              ),
+            ),
         ],
       ),
     );
@@ -31,9 +120,16 @@ class ProjectsView extends StatelessWidget {
 }
 
 class ProjectDetailPanel extends StatelessWidget {
-  const ProjectDetailPanel({super.key, required this.project});
+  const ProjectDetailPanel({
+    super.key,
+    required this.project,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   final ProjectFinance project;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -57,8 +153,13 @@ class ProjectDetailPanel extends StatelessWidget {
               ),
               IconButton(
                 tooltip: 'Sửa dự án',
-                onPressed: () {},
+                onPressed: onEdit,
                 icon: const Icon(Icons.edit_outlined),
+              ),
+              IconButton(
+                tooltip: 'Xóa dự án',
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline),
               ),
             ],
           ),
@@ -78,6 +179,8 @@ class ProjectDetailPanel extends StatelessWidget {
             children: [
               Text('${(project.progress * 100).round()}% hoàn thành'),
               const Spacer(),
+              StatusChip(status: project.status),
+              const SizedBox(width: 8),
               RiskChip(risk: project.risk),
             ],
           ),
@@ -92,8 +195,8 @@ class ProjectDetailPanel extends StatelessWidget {
               ),
               Expanded(
                 child: MiniStat(
-                  label: 'Cọc',
-                  value: formatMoney(project.depositReceived),
+                  label: 'Đã thu',
+                  value: formatMoney(project.paidAmount),
                 ),
               ),
               Expanded(
@@ -111,7 +214,14 @@ class ProjectDetailPanel extends StatelessWidget {
 }
 
 class FilterChips extends StatelessWidget {
-  const FilterChips({super.key});
+  const FilterChips({
+    super.key,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final ProjectFilter selected;
+  final ValueChanged<ProjectFilter> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -119,25 +229,262 @@ class FilterChips extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: [
-        FilterChip(
-          label: const Text('Tất cả'),
-          selected: true,
-          onSelected: (_) {},
+        _FilterChip(
+          label: 'Tất cả',
+          value: ProjectFilter.all,
+          selected: selected,
+          onChanged: onChanged,
         ),
-        FilterChip(
-          label: const Text('Đang làm'),
-          selected: false,
-          onSelected: (_) {},
+        _FilterChip(
+          label: 'Đang làm',
+          value: ProjectFilter.active,
+          selected: selected,
+          onChanged: onChanged,
         ),
-        FilterChip(
-          label: const Text('Chờ thanh toán'),
-          selected: false,
-          onSelected: (_) {},
+        _FilterChip(
+          label: 'Chờ thanh toán',
+          value: ProjectFilter.waitingPayment,
+          selected: selected,
+          onChanged: onChanged,
         ),
-        FilterChip(
-          label: const Text('Rủi ro cao'),
-          selected: false,
-          onSelected: (_) {},
+        _FilterChip(
+          label: 'Rủi ro cao',
+          value: ProjectFilter.highRisk,
+          selected: selected,
+          onChanged: onChanged,
+        ),
+      ],
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
+    required this.label,
+    required this.value,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final String label;
+  final ProjectFilter value;
+  final ProjectFilter selected;
+  final ValueChanged<ProjectFilter> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilterChip(
+      label: Text(label),
+      selected: selected == value,
+      onSelected: (_) => onChanged(value),
+    );
+  }
+}
+
+class ProjectEditorDialog extends StatefulWidget {
+  const ProjectEditorDialog({super.key, this.project});
+
+  final ProjectFinance? project;
+
+  @override
+  State<ProjectEditorDialog> createState() => _ProjectEditorDialogState();
+}
+
+class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nameController;
+  late final TextEditingController _clientController;
+  late final TextEditingController _totalValueController;
+  late final TextEditingController _paidAmountController;
+  late final TextEditingController _dueDateController;
+  late final TextEditingController _notesController;
+  late double _progress;
+  late ProjectRisk _risk;
+
+  bool get _isEditing => widget.project != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final project = widget.project;
+    _nameController = TextEditingController(text: project?.name ?? '');
+    _clientController = TextEditingController(text: project?.client ?? '');
+    _totalValueController = TextEditingController(
+      text: project == null ? '' : project.totalValue.toStringAsFixed(0),
+    );
+    _paidAmountController = TextEditingController(
+      text: project == null ? '0' : project.paidAmount.toStringAsFixed(0),
+    );
+    _dueDateController = TextEditingController(text: project?.dueDate ?? '');
+    _notesController = TextEditingController(text: project?.notes ?? '');
+    _progress = project?.progress ?? 0;
+    _risk = project?.risk ?? ProjectRisk.medium;
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _clientController.dispose();
+    _totalValueController.dispose();
+    _paidAmountController.dispose();
+    _dueDateController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    final totalValue = _parseMoney(_totalValueController.text);
+    final paidAmount =
+        _parseMoney(_paidAmountController.text).clamp(0, totalValue).toDouble();
+    final project = ProjectFinance(
+      id: widget.project?.id ??
+          'project-${DateTime.now().microsecondsSinceEpoch}',
+      name: _nameController.text.trim(),
+      client: _clientController.text.trim(),
+      totalValue: totalValue,
+      depositReceived: widget.project?.depositReceived ?? paidAmount,
+      paidAmount: paidAmount,
+      reserveAmount: widget.project?.reserveAmount ?? paidAmount * 0.2,
+      dueDate: _dueDateController.text.trim(),
+      progress: _progress,
+      risk: _risk,
+      status: PaymentStatus.partlyPaid,
+      notes: _notesController.text.trim(),
+    );
+    Navigator.pop(context, project);
+  }
+
+  double _parseMoney(String value) {
+    final clean = value.replaceAll('.', '').replaceAll(',', '').trim();
+    return double.tryParse(clean) ?? 0;
+  }
+
+  String? _required(String? value) {
+    if ((value ?? '').trim().isEmpty) return 'Không được bỏ trống.';
+    return null;
+  }
+
+  String? _moneyValidator(String? value) {
+    if (_parseMoney(value ?? '') <= 0) return 'Nhập số tiền hợp lệ.';
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(_isEditing ? 'Sửa dự án' : 'Thêm dự án'),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: _nameController,
+                  validator: _required,
+                  decoration: const InputDecoration(
+                    labelText: 'Tên dự án',
+                    prefixIcon: Icon(Icons.folder_copy_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _clientController,
+                  validator: _required,
+                  decoration: const InputDecoration(
+                    labelText: 'Khách hàng',
+                    prefixIcon: Icon(Icons.business_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _totalValueController,
+                  keyboardType: TextInputType.number,
+                  validator: _moneyValidator,
+                  decoration: const InputDecoration(
+                    labelText: 'Giá trị hợp đồng',
+                    prefixIcon: Icon(Icons.monetization_on_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _paidAmountController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Đã thu',
+                    prefixIcon: Icon(Icons.payments_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _dueDateController,
+                  validator: _required,
+                  decoration: const InputDecoration(
+                    labelText: 'Hạn thanh toán',
+                    prefixIcon: Icon(Icons.event_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<ProjectRisk>(
+                  initialValue: _risk,
+                  decoration: const InputDecoration(
+                    labelText: 'Rủi ro',
+                    prefixIcon: Icon(Icons.warning_amber_outlined),
+                  ),
+                  items: ProjectRisk.values
+                      .map(
+                        (risk) => DropdownMenuItem(
+                          value: risk,
+                          child: Text(riskText(risk)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) =>
+                      setState(() => _risk = value ?? ProjectRisk.medium),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _notesController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Ghi chú',
+                    prefixIcon: Icon(Icons.notes_outlined),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    const Text('Tiến độ'),
+                    Expanded(
+                      child: Slider(
+                        value: _progress,
+                        onChanged: (value) => setState(() => _progress = value),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 48,
+                      child: Text('${(_progress * 100).round()}%'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Hủy'),
+        ),
+        FilledButton.icon(
+          onPressed: _submit,
+          icon: Icon(_isEditing ? Icons.save_outlined : Icons.add),
+          label: Text(_isEditing ? 'Lưu' : 'Thêm'),
         ),
       ],
     );

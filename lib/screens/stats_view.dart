@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../models/project_finance.dart';
 import '../utils/helpers.dart';
 import '../widgets/shared_widgets.dart';
@@ -41,7 +42,7 @@ class StatsView extends StatelessWidget {
           const InsightTile(
             icon: Icons.account_balance_wallet_outlined,
             title: 'Tỷ lệ dự phòng hiện tại',
-            value: 'Đang đạt mức tốt so với mục tiêu 20%',
+            value: 'Đang đạt mức tốt so với mục tiêu đã đặt',
           ),
         ],
       ),
@@ -73,7 +74,9 @@ class StatsChart extends StatelessWidget {
         children: [
           Text(
             'Giai đoạn hiện tại',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 18),
           ChartBar(
@@ -166,7 +169,9 @@ class RiskBreakdown extends StatelessWidget {
         children: [
           Text(
             'Chỉ số rủi ro dự án',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 14),
           Row(
@@ -199,8 +204,9 @@ class RiskBreakdown extends StatelessWidget {
     );
   }
 
-  int countRisk(ProjectRisk risk) =>
-      projects.where((project) => project.risk == risk).length;
+  int countRisk(ProjectRisk risk) {
+    return projects.where((project) => project.risk == risk).length;
+  }
 }
 
 class RiskCount extends StatelessWidget {

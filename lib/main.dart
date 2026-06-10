@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+
+import 'models/app_user.dart';
 import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
+import 'services/auth_service.dart';
 
 void main() {
   runApp(const FreelanceFinanceApp());
@@ -36,20 +39,28 @@ class AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<AuthGate> {
-  bool _isSignedIn = false;
+  final AuthService _authService = AuthService();
+  AppUser? _currentUser;
 
-  void _openDashboard() {
-    setState(() => _isSignedIn = true);
+  void _handleAuthenticated(AppUser user) {
+    setState(() => _currentUser = user);
+  }
+
+  void _handleLogout() {
+    _authService.logout();
+    setState(() => _currentUser = null);
   }
 
   @override
   Widget build(BuildContext context) {
-    // Nếu đã đăng nhập, điều hướng thẳng vào trang quản lý chính
-    if (_isSignedIn) {
-      return const FinanceHomePage();
+    final user = _currentUser;
+    if (user != null) {
+      return FinanceHomePage(user: user, onLogout: _handleLogout);
     }
 
-    // Nếu chưa đăng nhập, hiển thị màn hình Đăng nhập / Đăng ký
-    return LoginPage(onLogin: _openDashboard);
+    return LoginPage(
+      authService: _authService,
+      onAuthenticated: _handleAuthenticated,
+    );
   }
 }
