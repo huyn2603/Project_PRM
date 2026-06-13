@@ -15,7 +15,7 @@ class DashboardView extends StatelessWidget {
   final List<ProjectFinance> projects;
   final ValueChanged<ProjectFinance> onAddProject;
 
-  Future<void> _openCreateProject(BuildContext context) async {
+  Future<void> _openCreate(BuildContext context) async {
     final project = await showDialog<ProjectFinance>(
       context: context,
       builder: (context) => const ProjectEditorDialog(),
@@ -25,84 +25,119 @@ class DashboardView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final totalIncome =
-        projects.fold<double>(0, (sum, p) => sum + p.paidAmount);
-    final totalDebt = projects.fold<double>(0, (sum, p) => sum + p.remaining);
-    final totalReserve = projects.fold<double>(
-      0,
-      (sum, p) => sum + p.reserveAmount,
-    );
-    final highRisk = projects.where((p) => p.risk == ProjectRisk.high).length;
+    final totalIncome = projects.fold<double>(0, (s, p) => s + p.paidAmount);
+    final totalDebt = projects.fold<double>(0, (s, p) => s + p.remaining);
+    final totalReserve = projects.fold<double>(0, (s, p) => s + p.reserveAmount);
+    final highRisk = projects.where((p) => p.riskScore >= 55).length;
+    final overdueProjects = projects.where((p) => p.status == PaymentStatus.overdue).toList();
+    final urgentProjects = projects
+        .where((p) => p.remaining > 0)
+        .toList()
+      ..sort((a, b) => b.riskScore.compareTo(a.riskScore));
 
     return AppPage(
-      title: 'Tài chính Freelancer',
+      title: 'FreelanceFlow',
       subtitle: 'Kiểm soát dòng tiền theo từng dự án',
-      action: IconButton(
-        tooltip: 'Thêm dự án',
-        onPressed: () => _openCreateProject(context),
-        icon: const Icon(Icons.add_circle_outline),
+      action: FilledButton.icon(
+        onPressed: () => _openCreate(context),
+        icon: const Icon(Icons.add, size: 18),
+        label: const Text('Dự án'),
       ),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
-          _HeroSummary(
+          // ── Hero card ──
+          _HeroCard(
             totalIncome: totalIncome,
             totalDebt: totalDebt,
             totalReserve: totalReserve,
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
+
+          // ── Metric grid ──
           GridView.count(
-            crossAxisCount: MediaQuery.sizeOf(context).width > 720 ? 4 : 2,
+            crossAxisCount: MediaQuery.sizeOf(context).width > 600 ? 4 : 2,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 1.45,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 1.4,
             children: [
               MetricCard(
                 label: 'Đã thu',
                 value: formatMoney(totalIncome),
-                icon: Icons.trending_up,
-                color: const Color(0xFF1B7F5A),
+                icon: Icons.trending_up_rounded,
+                color: const Color(0xFF10B981),
+                subtitle: '${projects.where((p) => p.status == PaymentStatus.paid).length} dự án xong',
               ),
               MetricCard(
-                label: 'Công nợ',
+                label: 'Còn phải thu',
                 value: formatMoney(totalDebt),
-                icon: Icons.receipt_long,
-                color: const Color(0xFFB95D2A),
+                icon: Icons.pending_actions_rounded,
+                color: const Color(0xFFF59E0B),
+                subtitle: '${projects.where((p) => p.remaining > 0).length} khoản nợ',
               ),
               MetricCard(
-                label: 'Dự phòng',
+                label: 'Quỹ dự phòng',
                 value: formatMoney(totalReserve),
-                icon: Icons.shield_outlined,
-                color: const Color(0xFF315C9A),
+                icon: Icons.shield_rounded,
+                color: const Color(0xFF2563EB),
+                subtitle: totalIncome == 0
+                    ? '0%'
+                    : '${(totalReserve / totalIncome * 100).round()}% thu nhập',
               ),
               MetricCard(
                 label: 'Rủi ro cao',
                 value: '$highRisk dự án',
                 icon: Icons.warning_amber_rounded,
-                color: const Color(0xFFB3261E),
+                color: const Color(0xFFEF4444),
+                subtitle: overdueProjects.isEmpty
+                    ? 'Không quá hạn'
+                    : '${overdueProjects.length} quá hạn',
               ),
             ],
           ),
-          const SizedBox(height: 22),
-          const SectionHeader(title: 'Cần xử lý sớm'),
+
+          // ── Overdue alert ──
+          if (overdueProjects.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _OverdueAlert(projects: overdueProjects),
+          ],
+
+          const SizedBox(height: 20),
+
+          // ── Recent projects ──
+          SectionHeader(
+            title: 'Ưu tiên xử lý',
+            trailing: TextButton(
+              onPressed: () {},
+              child: const Text('Xem tất cả'),
+            ),
+          ),
+
           if (projects.isEmpty)
-            const EmptyState(
-              icon: Icons.folder_open,
+            EmptyState(
+              icon: Icons.folder_open_rounded,
               title: 'Chưa có dự án',
-              message: 'Tạo dự án đầu tiên để theo dõi thu nợ và dòng tiền.',
+              message: 'Tạo dự án đầu tiên để bắt đầu theo dõi dòng tiền.',
+              action: FilledButton.icon(
+                onPressed: () => _openCreate(context),
+                icon: const Icon(Icons.add),
+                label: const Text('Tạo dự án'),
+              ),
             )
           else
-            ...projects.map((project) => ProjectCard(project: project)),
+            ...urgentProjects.take(4).map((p) => _ProjectSummaryCard(project: p)),
         ],
       ),
     );
   }
 }
 
-class _HeroSummary extends StatelessWidget {
-  const _HeroSummary({
+// ── Hero Card ─────────────────────────────────────────────────────────────────
+
+class _HeroCard extends StatelessWidget {
+  const _HeroCard({
     required this.totalIncome,
     required this.totalDebt,
     required this.totalReserve,
@@ -114,51 +149,126 @@ class _HeroSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cashFlow = totalIncome - totalDebt;
+    final reserveRate =
+        totalIncome == 0 ? 0.0 : (totalReserve / totalIncome).clamp(0.0, 1.0);
+
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: const Color(0xFF173B45),
-        borderRadius: BorderRadius.circular(8),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E3A8A), Color(0xFF2563EB)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF2563EB).withValues(alpha: 0.35),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.wallet_outlined, color: Colors.white),
-              const SizedBox(width: 10),
-              Text(
-                'Sức khỏe dòng tiền',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.monitor_heart_outlined, color: Colors.white70, size: 13),
+                    SizedBox(width: 5),
+                    Text(
+                      'Sức khỏe dòng tiền',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
+                  ],
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           Text(
-            formatMoney(totalIncome - totalDebt),
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
+            formatMoneyFull(cashFlow),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 32,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -1,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            cashFlow >= 0
+                ? 'Dòng tiền dương — đang kiểm soát tốt'
+                : 'Cảnh báo: Tổng công nợ vượt thu nhập',
+            style: TextStyle(
+              color: cashFlow >= 0
+                  ? Colors.white70
+                  : const Color(0xFFFCA5A5),
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _HeroStat(
+                  label: 'Đã thu',
+                  value: formatMoney(totalIncome),
+                  color: const Color(0xFF6EE7B7),
                 ),
+              ),
+              Container(
+                  width: 1,
+                  height: 32,
+                  color: Colors.white.withValues(alpha: 0.2)),
+              Expanded(
+                child: _HeroStat(
+                  label: 'Còn nợ',
+                  value: formatMoney(totalDebt),
+                  color: const Color(0xFFFDE68A),
+                ),
+              ),
+              Container(
+                  width: 1,
+                  height: 32,
+                  color: Colors.white.withValues(alpha: 0.2)),
+              Expanded(
+                child: _HeroStat(
+                  label: 'Dự phòng',
+                  value: formatMoney(totalReserve),
+                  color: const Color(0xFF93C5FD),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: LinearProgressIndicator(
+              value: reserveRate,
+              minHeight: 6,
+              backgroundColor: Colors.white.withValues(alpha: 0.2),
+              color: const Color(0xFF34D399),
+            ),
           ),
           const SizedBox(height: 6),
           Text(
-            'Dòng tiền khả dụng sau khi trừ công nợ cần thu',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
-          ),
-          const SizedBox(height: 18),
-          LinearProgressIndicator(
-            value:
-                totalIncome == 0 ? 0 : (totalReserve / totalIncome).clamp(0, 1),
-            minHeight: 8,
-            borderRadius: BorderRadius.circular(99),
-            backgroundColor: Colors.white24,
-            color: const Color(0xFF9AD0C2),
+            'Quỹ dự phòng: ${(reserveRate * 100).round()}% thu nhập',
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
           ),
         ],
       ),
@@ -166,15 +276,104 @@ class _HeroSummary extends StatelessWidget {
   }
 }
 
-class ProjectCard extends StatelessWidget {
-  const ProjectCard({super.key, required this.project});
+class _HeroStat extends StatelessWidget {
+  const _HeroStat({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+  final String label;
+  final String value;
+  final Color color;
 
-  final ProjectFinance project;
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Column(
+        children: [
+          Text(label,
+              style: const TextStyle(color: Colors.white54, fontSize: 11)),
+          const SizedBox(height: 3),
+          Text(value,
+              style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                  letterSpacing: -0.3)),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Overdue Alert ─────────────────────────────────────────────────────────────
+
+class _OverdueAlert extends StatelessWidget {
+  const _OverdueAlert({required this.projects});
+  final List<ProjectFinance> projects;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF1F2),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFECACA)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.alarm_rounded,
+                color: Color(0xFFEF4444), size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Quá hạn thanh toán!',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFFB91C1C),
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  projects
+                      .map((p) => '${p.client} (${formatMoney(p.remaining)})')
+                      .join(', '),
+                  style: const TextStyle(
+                      color: Color(0xFFDC2626), fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Project summary card ──────────────────────────────────────────────────────
+
+class _ProjectSummaryCard extends StatelessWidget {
+  const _ProjectSummaryCard({required this.project});
+  final ProjectFinance project;
+
+  @override
+  Widget build(BuildContext context) {
+    final riskColor2 = riskScoreColor(project.riskScore);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
       decoration: cardDecoration(),
       child: Column(
@@ -182,36 +381,79 @@ class ProjectCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Expanded(
-                child: Text(
-                  project.name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                  ),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2563EB).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  categoryIcon(project.category),
+                  size: 16,
+                  color: const Color(0xFF2563EB),
                 ),
               ),
-              RiskChip(risk: project.risk),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      project.name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 14),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      project.client,
+                      style: const TextStyle(
+                          color: Colors.black45, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              RiskScoreBadge(score: project.riskScore),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(project.client, style: const TextStyle(color: Colors.black54)),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: LinearProgressIndicator(
+              value: project.progress,
+              minHeight: 6,
+              backgroundColor: const Color(0xFFE5E7EB),
+              color: riskColor2,
+            ),
+          ),
+          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: MiniStat(
                   label: 'Đã thu',
                   value: formatMoney(project.paidAmount),
+                  valueColor: const Color(0xFF10B981),
                 ),
               ),
               Expanded(
                 child: MiniStat(
                   label: 'Còn lại',
                   value: formatMoney(project.remaining),
+                  valueColor: project.remaining > 0
+                      ? const Color(0xFFF59E0B)
+                      : null,
                 ),
               ),
-              Expanded(child: MiniStat(label: 'Hạn', value: project.dueDate)),
+              Expanded(
+                child: MiniStat(
+                  label: 'Hạn',
+                  value: project.dueDate,
+                  valueColor: project.status == PaymentStatus.overdue
+                      ? const Color(0xFFEF4444)
+                      : null,
+                ),
+              ),
             ],
           ),
         ],
