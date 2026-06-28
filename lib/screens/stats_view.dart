@@ -21,10 +21,11 @@ class _StatsViewState extends State<StatsView> {
   @override
   Widget build(BuildContext context) {
     final projects = widget.projects;
-    final paid = projects.fold<double>(0, (s, p) => s + p.paidAmount);
-    final debt = projects.fold<double>(0, (s, p) => s + p.remaining);
+    final paid = projects.fold<double>(0, (s, p) => s + p.ownerNetReceived);
+    final debt = projects.fold<double>(0, (s, p) => s + p.ownerRemaining);
     final reserve = projects.fold<double>(0, (s, p) => s + p.reserveAmount);
-    final totalValue = projects.fold<double>(0, (s, p) => s + p.totalValue);
+    final totalValue =
+        projects.fold<double>(0, (s, p) => s + p.ownerContractShare);
 
     final collectionRate = totalValue == 0 ? 0.0 : paid / totalValue;
     final reserveRate = paid == 0 ? 0.0 : reserve / paid;
@@ -46,7 +47,8 @@ class _StatsViewState extends State<StatsView> {
               onTap: () => setState(() => _periodIndex = i),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: _periodIndex == i ? Colors.white : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
@@ -107,12 +109,15 @@ class _StatsViewState extends State<StatsView> {
               Expanded(
                 child: _KpiCard(
                   label: 'Dự án hoàn thành',
-                  value: '${projects.where((p) => p.status == PaymentStatus.paid).length}/${projects.length}',
+                  value:
+                      '${projects.where((p) => p.status == PaymentStatus.paid).length}/${projects.length}',
                   sub: 'Đã xong / Tổng',
                   color: const Color(0xFF7C3AED),
                   progress: projects.isEmpty
                       ? 0
-                      : projects.where((p) => p.status == PaymentStatus.paid).length /
+                      : projects
+                              .where((p) => p.status == PaymentStatus.paid)
+                              .length /
                           projects.length,
                 ),
               ),
@@ -120,7 +125,8 @@ class _StatsViewState extends State<StatsView> {
               Expanded(
                 child: _KpiCard(
                   label: 'Rủi ro cao',
-                  value: '${projects.where((p) => p.riskScore >= 55).length} dự án',
+                  value:
+                      '${projects.where((p) => p.riskScore >= 55).length} dự án',
                   sub: 'Cần chú ý ngay',
                   color: const Color(0xFFEF4444),
                   progress: projects.isEmpty
@@ -449,7 +455,7 @@ class _CategoryBreakdown extends StatelessWidget {
   Widget build(BuildContext context) {
     final map = <ProjectCategory, double>{};
     for (final p in projects) {
-      map[p.category] = (map[p.category] ?? 0) + p.paidAmount;
+      map[p.category] = (map[p.category] ?? 0) + p.ownerNetReceived;
     }
     if (map.isEmpty) {
       return const SizedBox.shrink();
@@ -475,8 +481,7 @@ class _CategoryBreakdown extends StatelessWidget {
                     color: color.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(categoryIcon(entry.key),
-                      size: 14, color: color),
+                  child: Icon(categoryIcon(entry.key), size: 14, color: color),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -542,7 +547,8 @@ class _RiskAnalysisPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final low = projects.where((p) => p.riskScore < 25).length;
-    final med = projects.where((p) => p.riskScore >= 25 && p.riskScore < 55).length;
+    final med =
+        projects.where((p) => p.riskScore >= 25 && p.riskScore < 55).length;
     final high = projects.where((p) => p.riskScore >= 55).length;
     final total = projects.length;
 
@@ -647,9 +653,7 @@ class _RiskBubble extends StatelessWidget {
               Text(
                 '${(count / total * 100).round()}%',
                 style: TextStyle(
-                    fontSize: 10,
-                    color: color,
-                    fontWeight: FontWeight.w700),
+                    fontSize: 10, color: color, fontWeight: FontWeight.w700),
               ),
           ],
         ),
@@ -739,8 +743,7 @@ class _RiskLeaderboard extends StatelessWidget {
             decoration: BoxDecoration(
               border: isLast
                   ? null
-                  : const Border(
-                      bottom: BorderSide(color: Color(0xFFF3F4F6))),
+                  : const Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
             ),
             child: Row(
               children: [
@@ -788,8 +791,8 @@ class _RiskLeaderboard extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: color.withValues(alpha: 0.10),
                         borderRadius: BorderRadius.circular(99),
-                        border: Border.all(
-                            color: color.withValues(alpha: 0.25)),
+                        border:
+                            Border.all(color: color.withValues(alpha: 0.25)),
                       ),
                       child: Text(
                         '${p.riskScore}/100',

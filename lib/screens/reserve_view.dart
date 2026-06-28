@@ -27,7 +27,7 @@ class ReserveView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final reserve = projects.fold<double>(0, (s, p) => s + p.reserveAmount);
-    final income = projects.fold<double>(0, (s, p) => s + p.paidAmount);
+    final income = projects.fold<double>(0, (s, p) => s + p.ownerNetReceived);
     final actualRate = income == 0 ? 0.0 : reserve / income;
 
     // Goal: 3 months runway
@@ -88,8 +88,8 @@ class ReserveView extends StatelessWidget {
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500)),
                         Text('Tự động trích từ thu nhập',
-                            style: TextStyle(
-                                color: Colors.white54, fontSize: 11)),
+                            style:
+                                TextStyle(color: Colors.white54, fontSize: 11)),
                       ],
                     ),
                     const Spacer(),
@@ -170,8 +170,8 @@ class ReserveView extends StatelessWidget {
                     Row(
                       children: [
                         const Text('Tiến độ quỹ 3 tháng',
-                            style: TextStyle(
-                                color: Colors.white54, fontSize: 11)),
+                            style:
+                                TextStyle(color: Colors.white54, fontSize: 11)),
                         const Spacer(),
                         Text(
                           '${(runwayProgress * 100).round()}%',
@@ -269,14 +269,10 @@ class _ReserveTipCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isOnTrack
-            ? const Color(0xFFF0FDF4)
-            : const Color(0xFFFFFBEB),
+        color: isOnTrack ? const Color(0xFFF0FDF4) : const Color(0xFFFFFBEB),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isOnTrack
-              ? const Color(0xFFBBF7D0)
-              : const Color(0xFFFDE68A),
+          color: isOnTrack ? const Color(0xFFBBF7D0) : const Color(0xFFFDE68A),
         ),
       ),
       child: Row(
@@ -292,12 +288,9 @@ class _ReserveTipCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
-              isOnTrack
-                  ? Icons.check_circle_rounded
-                  : Icons.lightbulb_rounded,
-              color: isOnTrack
-                  ? const Color(0xFF10B981)
-                  : const Color(0xFFF59E0B),
+              isOnTrack ? Icons.check_circle_rounded : Icons.lightbulb_rounded,
+              color:
+                  isOnTrack ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
               size: 18,
             ),
           ),
@@ -347,7 +340,8 @@ class _ReserveProjectRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = project;
-    final rate = p.paidAmount == 0 ? 0.0 : p.reserveAmount / p.paidAmount;
+    final rate =
+        p.ownerNetReceived == 0 ? 0.0 : p.reserveAmount / p.ownerNetReceived;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -388,9 +382,8 @@ class _ReserveProjectRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Đã thu ${formatMoney(p.paidAmount)} · Trích ${(rate * 100).round()}%',
-                  style: const TextStyle(
-                      color: Colors.black45, fontSize: 11),
+                  'Phần của tôi ${formatMoney(p.ownerNetReceived)} · Trích ${(rate * 100).round()}%',
+                  style: const TextStyle(color: Colors.black45, fontSize: 11),
                 ),
               ],
             ),
@@ -474,8 +467,7 @@ class _ReserveRateDialogState extends State<ReserveRateDialog> {
                         style: TextStyle(color: Colors.black45, fontSize: 12)),
                     Text('thu nhập',
                         style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13)),
+                            fontWeight: FontWeight.w700, fontSize: 13)),
                   ],
                 ),
               ],
@@ -513,7 +505,8 @@ class _ReserveRateDialogState extends State<ReserveRateDialog> {
             ),
             child: const Text(
               'Khuyến nghị: 20–30% thu nhập để xây dựng quỹ khẩn cấp đủ 3–6 tháng chi phí.',
-              style: TextStyle(fontSize: 12, color: Colors.black54, height: 1.5),
+              style:
+                  TextStyle(fontSize: 12, color: Colors.black54, height: 1.5),
             ),
           ),
         ],

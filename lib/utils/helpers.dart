@@ -27,7 +27,7 @@ String formatMoneyFull(double value) {
     if (i > 0 && (s.length - i) % 3 == 0) result.write('.');
     result.write(s[i]);
   }
-  return '${result}đ';
+  return '$resultđ';
 }
 
 double parseMoney(String value) {

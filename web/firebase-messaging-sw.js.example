@@ -1,0 +1,15 @@
+// Đổi tên file thành firebase-messaging-sw.js sau khi điền cấu hình web
+// lấy từ Firebase Console > Project settings > Your apps > Web app.
+importScripts('https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+  apiKey: 'REPLACE_ME',
+  authDomain: 'REPLACE_ME.firebaseapp.com',
+  projectId: 'REPLACE_ME',
+  storageBucket: 'REPLACE_ME.firebasestorage.app',
+  messagingSenderId: 'REPLACE_ME',
+  appId: 'REPLACE_ME',
+});
+
+firebase.messaging();

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "299415540344",
+    "project_id": "prm-prj-72dea",
+    "storage_bucket": "prm-prj-72dea.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:299415540344:android:8eef5ed6d0bb2f89d9138d",
+        "android_client_info": {
+          "package_name": "vn.freelanceflow.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCpkjcTb2txheA4SpZywAZOh4yQ91YQHmM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

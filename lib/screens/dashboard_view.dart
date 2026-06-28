@@ -15,24 +15,35 @@ class DashboardView extends StatelessWidget {
   final List<ProjectFinance> projects;
   final ValueChanged<ProjectFinance> onAddProject;
 
+  List<String> get _clients {
+    final clients = projects
+        .map((p) => p.client.trim())
+        .where((client) => client.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return clients;
+  }
+
   Future<void> _openCreate(BuildContext context) async {
     final project = await showDialog<ProjectFinance>(
       context: context,
-      builder: (context) => const ProjectEditorDialog(),
+      builder: (context) => ProjectEditorDialog(clients: _clients),
     );
     if (project != null) onAddProject(project);
   }
 
   @override
   Widget build(BuildContext context) {
-    final totalIncome = projects.fold<double>(0, (s, p) => s + p.paidAmount);
-    final totalDebt = projects.fold<double>(0, (s, p) => s + p.remaining);
-    final totalReserve = projects.fold<double>(0, (s, p) => s + p.reserveAmount);
+    final totalIncome =
+        projects.fold<double>(0, (s, p) => s + p.ownerNetReceived);
+    final totalDebt = projects.fold<double>(0, (s, p) => s + p.ownerRemaining);
+    final totalReserve =
+        projects.fold<double>(0, (s, p) => s + p.reserveAmount);
     final highRisk = projects.where((p) => p.riskScore >= 55).length;
-    final overdueProjects = projects.where((p) => p.status == PaymentStatus.overdue).toList();
-    final urgentProjects = projects
-        .where((p) => p.remaining > 0)
-        .toList()
+    final overdueProjects =
+        projects.where((p) => p.status == PaymentStatus.overdue).toList();
+    final urgentProjects = projects.where((p) => p.remaining > 0).toList()
       ..sort((a, b) => b.riskScore.compareTo(a.riskScore));
 
     return AppPage(
@@ -68,14 +79,16 @@ class DashboardView extends StatelessWidget {
                 value: formatMoney(totalIncome),
                 icon: Icons.trending_up_rounded,
                 color: const Color(0xFF10B981),
-                subtitle: '${projects.where((p) => p.status == PaymentStatus.paid).length} dự án xong',
+                subtitle:
+                    '${projects.where((p) => p.status == PaymentStatus.paid).length} dự án xong',
               ),
               MetricCard(
                 label: 'Còn phải thu',
                 value: formatMoney(totalDebt),
                 icon: Icons.pending_actions_rounded,
                 color: const Color(0xFFF59E0B),
-                subtitle: '${projects.where((p) => p.remaining > 0).length} khoản nợ',
+                subtitle:
+                    '${projects.where((p) => p.remaining > 0).length} khoản nợ',
               ),
               MetricCard(
                 label: 'Quỹ dự phòng',
@@ -127,7 +140,9 @@ class DashboardView extends StatelessWidget {
               ),
             )
           else
-            ...urgentProjects.take(4).map((p) => _ProjectSummaryCard(project: p)),
+            ...urgentProjects
+                .take(4)
+                .map((p) => _ProjectSummaryCard(project: p)),
         ],
       ),
     );
@@ -176,7 +191,8 @@ class _HeroCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(99),
@@ -184,7 +200,8 @@ class _HeroCard extends StatelessWidget {
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.monitor_heart_outlined, color: Colors.white70, size: 13),
+                    Icon(Icons.monitor_heart_outlined,
+                        color: Colors.white70, size: 13),
                     SizedBox(width: 5),
                     Text(
                       'Sức khỏe dòng tiền',
@@ -215,9 +232,7 @@ class _HeroCard extends StatelessWidget {
                 ? 'Dòng tiền dương — đang kiểm soát tốt'
                 : 'Cảnh báo: Tổng công nợ vượt thu nhập',
             style: TextStyle(
-              color: cashFlow >= 0
-                  ? Colors.white70
-                  : const Color(0xFFFCA5A5),
+              color: cashFlow >= 0 ? Colors.white70 : const Color(0xFFFCA5A5),
               fontSize: 13,
             ),
           ),
@@ -350,8 +365,8 @@ class _OverdueAlert extends StatelessWidget {
                   projects
                       .map((p) => '${p.client} (${formatMoney(p.remaining)})')
                       .join(', '),
-                  style: const TextStyle(
-                      color: Color(0xFFDC2626), fontSize: 12),
+                  style:
+                      const TextStyle(color: Color(0xFFDC2626), fontSize: 12),
                 ),
               ],
             ),
@@ -407,8 +422,8 @@ class _ProjectSummaryCard extends StatelessWidget {
                     ),
                     Text(
                       project.client,
-                      style: const TextStyle(
-                          color: Colors.black45, fontSize: 12),
+                      style:
+                          const TextStyle(color: Colors.black45, fontSize: 12),
                     ),
                   ],
                 ),
@@ -440,9 +455,8 @@ class _ProjectSummaryCard extends StatelessWidget {
                 child: MiniStat(
                   label: 'Còn lại',
                   value: formatMoney(project.remaining),
-                  valueColor: project.remaining > 0
-                      ? const Color(0xFFF59E0B)
-                      : null,
+                  valueColor:
+                      project.remaining > 0 ? const Color(0xFFF59E0B) : null,
                 ),
               ),
               Expanded(

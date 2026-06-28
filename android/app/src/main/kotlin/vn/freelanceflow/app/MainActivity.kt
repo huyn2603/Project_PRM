@@ -1,4 +1,4 @@
-package com.example.freelance_finance_app
+package vn.freelanceflow.app
 
 import io.flutter.embedding.android.FlutterActivity
 

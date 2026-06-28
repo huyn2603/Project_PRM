@@ -9,14 +9,13 @@ class PaymentsView extends StatelessWidget {
     super.key,
     required this.projects,
     required this.onRecordPayment,
-    required this.onSendReminder,
   });
 
   final List<ProjectFinance> projects;
   final void Function(ProjectFinance project, double amount) onRecordPayment;
-  final ValueChanged<ProjectFinance> onSendReminder;
 
-  Future<void> _openPaymentDialog(BuildContext ctx, ProjectFinance project) async {
+  Future<void> _openPaymentDialog(
+      BuildContext ctx, ProjectFinance project) async {
     final amount = await showDialog<double>(
       context: ctx,
       builder: (context) => PaymentDialog(project: project),
@@ -26,9 +25,8 @@ class PaymentsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final overdueList = projects
-        .where((p) => p.status == PaymentStatus.overdue)
-        .toList();
+    final overdueList =
+        projects.where((p) => p.status == PaymentStatus.overdue).toList();
     final pendingList = projects
         .where((p) =>
             p.status != PaymentStatus.overdue &&
@@ -38,30 +36,12 @@ class PaymentsView extends StatelessWidget {
     final paidList =
         projects.where((p) => p.status == PaymentStatus.paid).toList();
 
-    final totalDebt =
-        projects.fold<double>(0, (s, p) => s + p.remaining);
-    final totalOverdue =
-        overdueList.fold<double>(0, (s, p) => s + p.remaining);
+    final totalDebt = projects.fold<double>(0, (s, p) => s + p.remaining);
+    final totalOverdue = overdueList.fold<double>(0, (s, p) => s + p.remaining);
 
     return AppPage(
       title: 'Thu nợ',
-      subtitle: 'Ghi nhận thanh toán và nhắc khách hàng',
-      action: overdueList.isEmpty
-          ? null
-          : FilledButton.tonal(
-              style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFFEF2F2),
-                  foregroundColor: const Color(0xFFEF4444)),
-              onPressed: () => onSendReminder(overdueList.first),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.notifications_active_rounded, size: 16),
-                  SizedBox(width: 6),
-                  Text('Nhắc'),
-                ],
-              ),
-            ),
+      subtitle: 'Theo dõi và ghi nhận các khoản thanh toán dự án',
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
         children: [
@@ -101,25 +81,11 @@ class PaymentsView extends StatelessWidget {
 
           // ── Overdue ──
           if (overdueList.isNotEmpty) ...[
-            SectionHeader(
-              title: '⚠️ Quá hạn (${overdueList.length})',
-              trailing: TextButton.icon(
-                onPressed: () {
-                  for (final p in overdueList) {
-                    onSendReminder(p);
-                  }
-                },
-                icon: const Icon(Icons.send_rounded, size: 14),
-                label: const Text('Nhắc tất cả'),
-                style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFFEF4444)),
-              ),
-            ),
+            SectionHeader(title: '⚠️ Quá hạn (${overdueList.length})'),
             ...overdueList.map(
               (p) => _PaymentCard(
                 project: p,
                 onRecord: () => _openPaymentDialog(context, p),
-                onRemind: () => onSendReminder(p),
                 highlight: true,
               ),
             ),
@@ -133,7 +99,6 @@ class PaymentsView extends StatelessWidget {
               (p) => _PaymentCard(
                 project: p,
                 onRecord: () => _openPaymentDialog(context, p),
-                onRemind: () => onSendReminder(p),
                 highlight: false,
               ),
             ),
@@ -147,7 +112,6 @@ class PaymentsView extends StatelessWidget {
               (p) => _PaymentCard(
                 project: p,
                 onRecord: null,
-                onRemind: null,
                 highlight: false,
               ),
             ),
@@ -224,13 +188,11 @@ class _PaymentCard extends StatelessWidget {
   const _PaymentCard({
     required this.project,
     required this.onRecord,
-    required this.onRemind,
     required this.highlight,
   });
 
   final ProjectFinance project;
   final VoidCallback? onRecord;
-  final VoidCallback? onRemind;
   final bool highlight;
 
   @override
@@ -377,25 +339,11 @@ class _PaymentCard extends StatelessWidget {
           ),
 
           // ── Action buttons ──
-          if (onRecord != null || onRemind != null)
+          if (onRecord != null)
             Container(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               child: Row(
                 children: [
-                  if (onRemind != null)
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: onRemind,
-                        icon: const Icon(Icons.send_rounded, size: 15),
-                        label: const Text('Nhắc khách'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFFEF4444),
-                          side: const BorderSide(color: Color(0xFFFECACA)),
-                        ),
-                      ),
-                    ),
-                  if (onRecord != null && onRemind != null)
-                    const SizedBox(width: 8),
                   if (onRecord != null)
                     Expanded(
                       child: FilledButton.icon(
@@ -449,9 +397,8 @@ class _PaymentDialogState extends State<PaymentDialog> {
   @override
   Widget build(BuildContext context) {
     final p = widget.project;
-    final paidRatio = p.totalValue == 0
-        ? 0.0
-        : (p.paidAmount / p.totalValue).clamp(0.0, 1.0);
+    final paidRatio =
+        p.totalValue == 0 ? 0.0 : (p.paidAmount / p.totalValue).clamp(0.0, 1.0);
 
     return AlertDialog(
       title: const Text('Ghi nhận thanh toán',
@@ -479,8 +426,8 @@ class _PaymentDialogState extends State<PaymentDialog> {
                   ),
                   const SizedBox(height: 4),
                   Text(p.client,
-                      style: const TextStyle(
-                          color: Colors.black45, fontSize: 12)),
+                      style:
+                          const TextStyle(color: Colors.black45, fontSize: 12)),
                   const SizedBox(height: 10),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(99),
@@ -515,6 +462,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
             const SizedBox(height: 16),
             TextFormField(
               controller: _amount,
+              onChanged: (_) => setState(() {}),
               keyboardType: TextInputType.number,
               autofocus: true,
               decoration: const InputDecoration(
@@ -529,6 +477,70 @@ class _PaymentDialogState extends State<PaymentDialog> {
                 return null;
               },
             ),
+            if (p.workMode == ProjectWorkMode.team &&
+                p.teamMembers.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2563EB).withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFF2563EB).withValues(alpha: 0.16),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Khoản này sẽ được phân bổ',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 6),
+                    ...p.teamMembers.map(
+                      (member) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${member.name} · ${member.sharePercent.toStringAsFixed(0)}%',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            Text(
+                              formatMoney(
+                                parseMoney(_amount.text) *
+                                    member.sharePercent /
+                                    100,
+                              ),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const Divider(height: 12),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text('Phần của bạn',
+                              style: TextStyle(fontWeight: FontWeight.w700)),
+                        ),
+                        Text(
+                          formatMoney(
+                            parseMoney(_amount.text) *
+                                (1 - p.teamSharePercent / 100),
+                          ),
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),

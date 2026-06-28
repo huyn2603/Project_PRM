@@ -77,9 +77,69 @@ class _LoginPageState extends State<LoginPage> {
     setState(() {
       _showRegister = false;
       _emailController.text = user.email;
-      _passwordController.text = widget.authService.passwordFor(user.email) ?? '';
+      _passwordController.text =
+          widget.authService.passwordFor(user.email) ?? '';
       _confirmPasswordController.clear();
     });
+  }
+
+  Future<void> _forgotPassword() async {
+    final emailController = TextEditingController(text: _emailController.text);
+    final email = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Quên mật khẩu'),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Nhập email đã đăng ký. Firebase sẽ gửi liên kết bảo mật để bạn đặt mật khẩu mới.',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: emailController,
+                keyboardType: TextInputType.emailAddress,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Email tài khoản',
+                  prefixIcon: Icon(Icons.alternate_email_rounded),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, emailController.text.trim()),
+            child: const Text('Gửi email'),
+          ),
+        ],
+      ),
+    );
+    emailController.dispose();
+    if (!mounted || email == null || email.isEmpty) return;
+
+    setState(() => _isLoading = true);
+    final error = await widget.authService.sendPasswordResetEmail(email);
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          error ??
+              'Đã gửi email đặt lại mật khẩu. Hãy kiểm tra cả thư mục Spam.',
+        ),
+        backgroundColor: error == null ? const Color(0xFF13795B) : null,
+      ),
+    );
   }
 
   @override
@@ -187,8 +247,9 @@ class _LoginPageState extends State<LoginPage> {
                               controller: _nameController,
                               label: 'Họ và tên',
                               icon: Icons.person_outline_rounded,
-                              validator: (v) =>
-                                  (v ?? '').trim().length < 2 ? 'Nhập họ tên hợp lệ.' : null,
+                              validator: (v) => (v ?? '').trim().length < 2
+                                  ? 'Nhập họ tên hợp lệ.'
+                                  : null,
                             ),
                             const SizedBox(height: 14),
                           ],
@@ -221,8 +282,9 @@ class _LoginPageState extends State<LoginPage> {
                               onPressed: () => setState(
                                   () => _obscurePassword = !_obscurePassword),
                             ),
-                            validator: (v) =>
-                                (v ?? '').length < 6 ? 'Cần ít nhất 6 ký tự.' : null,
+                            validator: (v) => (v ?? '').length < 6
+                                ? 'Cần ít nhất 6 ký tự.'
+                                : null,
                           ),
                           if (_showRegister) ...[
                             const SizedBox(height: 14),
@@ -242,8 +304,9 @@ class _LoginPageState extends State<LoginPage> {
                                     _obscureConfirmPassword =
                                         !_obscureConfirmPassword),
                               ),
-                              validator: (v) =>
-                                  v != _passwordController.text ? 'Mật khẩu chưa khớp.' : null,
+                              validator: (v) => v != _passwordController.text
+                                  ? 'Mật khẩu chưa khớp.'
+                                  : null,
                             ),
                           ] else ...[
                             const SizedBox(height: 8),
@@ -264,6 +327,12 @@ class _LoginPageState extends State<LoginPage> {
                                 const SizedBox(width: 8),
                                 const Text('Ghi nhớ đăng nhập',
                                     style: TextStyle(fontSize: 13)),
+                                const Spacer(),
+                                TextButton(
+                                  onPressed:
+                                      _isLoading ? null : _forgotPassword,
+                                  child: const Text('Quên mật khẩu?'),
+                                ),
                               ],
                             ),
                           ],
@@ -293,16 +362,18 @@ class _LoginPageState extends State<LoginPage> {
                   ),
 
                   // ── Test accounts ──
-                  if (!_showRegister) ...[
+                  if (!_showRegister &&
+                      widget.authService.testUsers.isNotEmpty) ...[
                     const SizedBox(height: 24),
-                    Row(
+                    const Row(
                       children: [
                         Expanded(child: Divider(color: Colors.black12)),
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          padding: EdgeInsets.symmetric(horizontal: 12),
                           child: Text(
                             'Tài khoản demo',
-                            style: TextStyle(color: Colors.black38, fontSize: 12),
+                            style:
+                                TextStyle(color: Colors.black38, fontSize: 12),
                           ),
                         ),
                         Expanded(child: Divider(color: Colors.black12)),
@@ -316,7 +387,9 @@ class _LoginPageState extends State<LoginPage> {
                       children: widget.authService.testUsers
                           .map(
                             (user) => InkWell(
-                              onTap: _isLoading ? null : () => _fillTestAccount(user),
+                              onTap: _isLoading
+                                  ? null
+                                  : () => _fillTestAccount(user),
                               borderRadius: BorderRadius.circular(12),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
@@ -324,7 +397,8 @@ class _LoginPageState extends State<LoginPage> {
                                 decoration: BoxDecoration(
                                   color: Colors.white,
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                                  border: Border.all(
+                                      color: const Color(0xFFE5E7EB)),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -333,7 +407,8 @@ class _LoginPageState extends State<LoginPage> {
                                       width: 30,
                                       height: 30,
                                       decoration: BoxDecoration(
-                                        color: cs.primary.withValues(alpha: 0.12),
+                                        color:
+                                            cs.primary.withValues(alpha: 0.12),
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                       alignment: Alignment.center,
@@ -348,7 +423,8 @@ class _LoginPageState extends State<LoginPage> {
                                     ),
                                     const SizedBox(width: 8),
                                     Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           user.fullName,

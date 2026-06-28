@@ -1,5 +1,11 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import '../models/app_reminder.dart';
+import '../models/app_user.dart';
 import '../models/project_finance.dart';
+import '../services/auth_service.dart';
 import 'auth_scope.dart';
 import '../utils/helpers.dart';
 
@@ -58,13 +64,51 @@ class AppPage extends StatelessWidget {
               ],
               if (auth != null) ...[
                 const SizedBox(width: 6),
+                Badge(
+                  isLabelVisible:
+                      auth.reminders.any((reminder) => !reminder.isRead),
+                  label: Text(
+                    '${auth.reminders.where((reminder) => !reminder.isRead).length}',
+                  ),
+                  child: IconButton(
+                    tooltip: 'Thông báo',
+                    icon: const Icon(Icons.notifications_none_rounded),
+                    onPressed: () async {
+                      final reminder = await showDialog<AppReminder>(
+                        context: context,
+                        builder: (_) => _NotificationCenterDialog(
+                          reminders: auth.reminders,
+                        ),
+                      );
+                      if (!context.mounted) return;
+                      if (reminder != null) {
+                        auth.onReminderSelected(reminder);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 2),
                 PopupMenuButton<String>(
                   tooltip: 'Tài khoản',
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  onSelected: (value) {
-                    if (value == 'logout') auth.onLogout();
+                  onSelected: (value) async {
+                    if (value == 'profile') {
+                      final updated = await showDialog<AppUser>(
+                        context: context,
+                        builder: (_) => _ProfileDialog(user: auth.user),
+                      );
+                      if (updated != null) auth.onUserChanged(updated);
+                    } else if (value == 'settings') {
+                      final updated = await showDialog<AppUser>(
+                        context: context,
+                        builder: (_) => _SettingsDialog(user: auth.user),
+                      );
+                      if (updated != null) auth.onUserChanged(updated);
+                    } else if (value == 'logout') {
+                      auth.onLogout();
+                    }
                   },
                   itemBuilder: (context) => [
                     PopupMenuItem<String>(
@@ -92,6 +136,25 @@ class AppPage extends StatelessWidget {
                     ),
                     const PopupMenuDivider(),
                     const PopupMenuItem<String>(
+                      value: 'profile',
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.person_outline_rounded, size: 20),
+                        title: Text('Hồ sơ'),
+                        dense: true,
+                      ),
+                    ),
+                    const PopupMenuItem<String>(
+                      value: 'settings',
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.settings_outlined, size: 20),
+                        title: Text('Cài đặt'),
+                        dense: true,
+                      ),
+                    ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem<String>(
                       value: 'logout',
                       child: ListTile(
                         contentPadding: EdgeInsets.zero,
@@ -101,30 +164,7 @@ class AppPage extends StatelessWidget {
                       ),
                     ),
                   ],
-                  child: Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Theme.of(context).colorScheme.primary,
-                          Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      auth.user.initials,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
+                  child: _UserAvatar(user: auth.user, radius: 19),
                 ),
               ],
             ],
@@ -137,6 +177,458 @@ class AppPage extends StatelessWidget {
 }
 
 // ─── SectionHeader ────────────────────────────────────────────────────────────
+
+class _NotificationCenterDialog extends StatelessWidget {
+  const _NotificationCenterDialog({required this.reminders});
+
+  final List<AppReminder> reminders;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Thông báo & nhắc việc'),
+      content: SizedBox(
+        width: 520,
+        child: reminders.isEmpty
+            ? const Padding(
+                padding: EdgeInsets.symmetric(vertical: 36),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.notifications_none_rounded,
+                        size: 42, color: Colors.black26),
+                    SizedBox(height: 10),
+                    Text('Chưa có nhắc việc nào.'),
+                  ],
+                ),
+              )
+            : ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 520),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: reminders.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final reminder = reminders[index];
+                    final color = reminder.isUrgent
+                        ? const Color(0xFFEF4444)
+                        : const Color(0xFF2563EB);
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      leading: CircleAvatar(
+                        backgroundColor: color.withValues(alpha: 0.12),
+                        foregroundColor: color,
+                        child: Icon(_reminderIcon(reminder.kind), size: 20),
+                      ),
+                      title: Text(
+                        reminder.title,
+                        style: TextStyle(
+                          fontWeight: reminder.isRead
+                              ? FontWeight.w600
+                              : FontWeight.w900,
+                        ),
+                      ),
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(reminder.message),
+                      ),
+                      trailing: reminder.isRead
+                          ? null
+                          : const Icon(Icons.circle,
+                              size: 9, color: Color(0xFF2563EB)),
+                      onTap: () => Navigator.pop(context, reminder),
+                    );
+                  },
+                ),
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Đóng'),
+        ),
+      ],
+    );
+  }
+
+  static IconData _reminderIcon(ReminderKind kind) => switch (kind) {
+        ReminderKind.paymentDue => Icons.schedule_rounded,
+        ReminderKind.paymentOverdue => Icons.warning_amber_rounded,
+        ReminderKind.deliveryDue => Icons.assignment_turned_in_outlined,
+        ReminderKind.teamPayout => Icons.groups_outlined,
+      };
+}
+
+class _ProfileDialog extends StatefulWidget {
+  const _ProfileDialog({required this.user});
+
+  final AppUser user;
+
+  @override
+  State<_ProfileDialog> createState() => _ProfileDialogState();
+}
+
+class _ProfileDialogState extends State<_ProfileDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _fullName;
+  late final TextEditingController _phone;
+  late final TextEditingController _jobTitle;
+  late final TextEditingController _bio;
+  Uint8List? _avatarBytes;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fullName = TextEditingController(text: widget.user.fullName);
+    _phone = TextEditingController(text: widget.user.phone);
+    _jobTitle = TextEditingController(text: widget.user.jobTitle);
+    _bio = TextEditingController(text: widget.user.bio);
+  }
+
+  @override
+  void dispose() {
+    _fullName.dispose();
+    _phone.dispose();
+    _jobTitle.dispose();
+    _bio.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickAvatar() async {
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 82,
+      maxWidth: 1200,
+      maxHeight: 1200,
+    );
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    if (mounted) setState(() => _avatarBytes = bytes);
+  }
+
+  Future<void> _save() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    setState(() => _saving = true);
+    try {
+      final updated = await AuthService().saveUser(
+        widget.user.copyWith(
+          fullName: _fullName.text.trim(),
+          phone: _phone.text.trim(),
+          jobTitle: _jobTitle.text.trim(),
+          bio: _bio.text.trim(),
+        ),
+        avatarBytes: _avatarBytes,
+      );
+      if (mounted) Navigator.pop(context, updated);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không thể lưu hồ sơ: $error')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Chỉnh sửa hồ sơ'),
+      content: SizedBox(
+        width: 460,
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    _UserAvatar(
+                      user: widget.user,
+                      radius: 44,
+                      memoryBytes: _avatarBytes,
+                    ),
+                    Positioned(
+                      right: -6,
+                      bottom: -4,
+                      child: IconButton.filled(
+                        tooltip: 'Chọn ảnh đại diện',
+                        onPressed: _saving ? null : _pickAvatar,
+                        icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: _fullName,
+                  decoration: const InputDecoration(
+                    labelText: 'Họ và tên',
+                    prefixIcon: Icon(Icons.person_outline_rounded),
+                  ),
+                  validator: (value) => (value ?? '').trim().length < 2
+                      ? 'Vui lòng nhập họ tên hợp lệ.'
+                      : null,
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  initialValue: widget.user.email,
+                  enabled: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Email đăng nhập',
+                    prefixIcon: Icon(Icons.email_outlined),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _jobTitle,
+                  decoration: const InputDecoration(
+                    labelText: 'Chức danh / chuyên môn',
+                    hintText: 'Ví dụ: UI/UX Designer',
+                    prefixIcon: Icon(Icons.badge_outlined),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _phone,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Số điện thoại',
+                    prefixIcon: Icon(Icons.phone_outlined),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _bio,
+                  maxLines: 3,
+                  maxLength: 240,
+                  decoration: const InputDecoration(
+                    labelText: 'Giới thiệu ngắn',
+                    hintText: 'Kinh nghiệm, thế mạnh hoặc cách bạn làm việc...',
+                    prefixIcon: Icon(Icons.notes_rounded),
+                    alignLabelWithHint: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('Hủy'),
+        ),
+        FilledButton.icon(
+          onPressed: _saving ? null : _save,
+          icon: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.save_outlined, size: 18),
+          label: Text(_saving ? 'Đang lưu...' : 'Lưu hồ sơ'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SettingsDialog extends StatefulWidget {
+  const _SettingsDialog({required this.user});
+
+  final AppUser user;
+
+  @override
+  State<_SettingsDialog> createState() => _SettingsDialogState();
+}
+
+class _SettingsDialogState extends State<_SettingsDialog> {
+  late int _reminderDays;
+  late bool _notifyPayments;
+  late bool _notifyProjects;
+  late bool _notifyPayouts;
+  late double _reserveRate;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _reminderDays = widget.user.reminderDays;
+    _notifyPayments = widget.user.notifyPayments;
+    _notifyProjects = widget.user.notifyProjectUpdates;
+    _notifyPayouts = widget.user.notifyTeamPayouts;
+    _reserveRate = widget.user.reserveRate;
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      final updated = await AuthService().saveUser(
+        widget.user.copyWith(
+          reminderDays: _reminderDays,
+          notifyPayments: _notifyPayments,
+          notifyProjectUpdates: _notifyProjects,
+          notifyTeamPayouts: _notifyPayouts,
+          reserveRate: _reserveRate,
+        ),
+      );
+      if (mounted) Navigator.pop(context, updated);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không thể lưu cài đặt: $error')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Cài đặt'),
+      content: SizedBox(
+        width: 500,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Thông báo',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                secondary: const Icon(Icons.payments_outlined),
+                title: const Text('Thu tiền từ khách'),
+                subtitle: const Text('Khi nhận cọc, nhận thêm hoặc thu đủ'),
+                value: _notifyPayments,
+                onChanged: (value) => setState(() => _notifyPayments = value),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                secondary: const Icon(Icons.task_alt_rounded),
+                title: const Text('Tiến độ dự án'),
+                subtitle: const Text('Khi dự án hoàn thành hoặc có rủi ro cao'),
+                value: _notifyProjects,
+                onChanged: (value) => setState(() => _notifyProjects = value),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                secondary: const Icon(Icons.groups_outlined),
+                title: const Text('Chia tiền nhóm'),
+                subtitle:
+                    const Text('Khi có tiền cần chia hoặc vừa trả thành viên'),
+                value: _notifyPayouts,
+                onChanged: (value) => setState(() => _notifyPayouts = value),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.notifications_active_outlined),
+                title: const Text('Nhắc trước hạn'),
+                subtitle: Text('Hiển thị trước $_reminderDays ngày'),
+                trailing: DropdownButton<int>(
+                  value: _reminderDays,
+                  items: const [3, 5, 7, 14]
+                      .map((days) => DropdownMenuItem(
+                            value: days,
+                            child: Text('$days ngày'),
+                          ))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) setState(() => _reminderDays = value);
+                  },
+                ),
+              ),
+              const Divider(height: 28),
+              Row(
+                children: [
+                  const Icon(Icons.savings_outlined),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Tỷ lệ quỹ dự phòng'),
+                        Text('Tính trên phần tiền của bạn sau khi chia nhóm',
+                            style:
+                                TextStyle(fontSize: 12, color: Colors.black54)),
+                      ],
+                    ),
+                  ),
+                  Text('${(_reserveRate * 100).round()}%',
+                      style: const TextStyle(fontWeight: FontWeight.w800)),
+                ],
+              ),
+              Slider(
+                value: _reserveRate,
+                min: 0,
+                max: 0.5,
+                divisions: 10,
+                label: '${(_reserveRate * 100).round()}%',
+                onChanged: (value) => setState(() => _reserveRate = value),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('Hủy'),
+        ),
+        FilledButton.icon(
+          onPressed: _saving ? null : _save,
+          icon: const Icon(Icons.save_outlined, size: 18),
+          label: Text(_saving ? 'Đang lưu...' : 'Lưu cài đặt'),
+        ),
+      ],
+    );
+  }
+}
+
+class _UserAvatar extends StatelessWidget {
+  const _UserAvatar({
+    required this.user,
+    required this.radius,
+    this.memoryBytes,
+  });
+
+  final AppUser user;
+  final double radius;
+  final Uint8List? memoryBytes;
+
+  @override
+  Widget build(BuildContext context) {
+    ImageProvider<Object>? image;
+    if (memoryBytes != null) {
+      image = MemoryImage(memoryBytes!);
+    } else if (user.avatarUrl.isNotEmpty) {
+      image = NetworkImage(user.avatarUrl);
+    }
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: Theme.of(context).colorScheme.primary,
+      foregroundImage: image,
+      foregroundColor: Colors.white,
+      child: image == null
+          ? Text(
+              user.initials,
+              style: TextStyle(
+                fontSize: radius * 0.65,
+                fontWeight: FontWeight.w900,
+              ),
+            )
+          : null,
+    );
+  }
+}
 
 class SectionHeader extends StatelessWidget {
   const SectionHeader({super.key, required this.title, this.trailing});
@@ -298,7 +790,8 @@ class EmptyState extends StatelessWidget {
             width: 72,
             height: 72,
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+              color:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Icon(
@@ -444,7 +937,11 @@ class MiniStat extends StatelessWidget {
 // ─── InfoRow ──────────────────────────────────────────────────────────────────
 
 class InfoRow extends StatelessWidget {
-  const InfoRow({super.key, required this.icon, required this.label, required this.value});
+  const InfoRow(
+      {super.key,
+      required this.icon,
+      required this.label,
+      required this.value});
 
   final IconData icon;
   final String label;

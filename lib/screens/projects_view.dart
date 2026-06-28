@@ -10,15 +10,19 @@ class ProjectsView extends StatefulWidget {
   const ProjectsView({
     super.key,
     required this.projects,
+    this.focusedProjectId,
     required this.onAddProject,
     required this.onUpdateProject,
     required this.onDeleteProject,
+    required this.onPayFull,
   });
 
   final List<ProjectFinance> projects;
+  final String? focusedProjectId;
   final ValueChanged<ProjectFinance> onAddProject;
   final ValueChanged<ProjectFinance> onUpdateProject;
   final ValueChanged<ProjectFinance> onDeleteProject;
+  final ValueChanged<ProjectFinance> onPayFull;
 
   @override
   State<ProjectsView> createState() => _ProjectsViewState();
@@ -26,12 +30,51 @@ class ProjectsView extends StatefulWidget {
 
 class _ProjectsViewState extends State<ProjectsView> {
   ProjectFilter _filter = ProjectFilter.all;
+  final Map<String, GlobalKey> _projectKeys = {};
+  String? _lastScrolledProjectId;
+
+  @override
+  void didUpdateWidget(covariant ProjectsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focusedProjectId != null &&
+        widget.focusedProjectId != oldWidget.focusedProjectId) {
+      _filter = ProjectFilter.all;
+      _lastScrolledProjectId = null;
+    }
+  }
+
+  void _scrollToFocusedProject() {
+    final id = widget.focusedProjectId;
+    if (id == null || id == _lastScrolledProjectId) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final targetContext = _projectKeys[id]?.currentContext;
+      if (targetContext == null) return;
+      _lastScrolledProjectId = id;
+      Scrollable.ensureVisible(
+        targetContext,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOut,
+        alignment: 0.08,
+      );
+    });
+  }
+
+  List<String> get _clients {
+    final clients = widget.projects
+        .map((p) => p.client.trim())
+        .where((client) => client.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return clients;
+  }
 
   List<ProjectFinance> get _filtered {
     return switch (_filter) {
       ProjectFilter.all => widget.projects,
-      ProjectFilter.active =>
-        widget.projects.where((p) => p.progress < 1 && p.remaining > 0).toList(),
+      ProjectFilter.active => widget.projects
+          .where((p) => p.progress < 1 && p.remaining > 0)
+          .toList(),
       ProjectFilter.waitingPayment =>
         widget.projects.where((p) => p.remaining > 0).toList(),
       ProjectFilter.highRisk =>
@@ -44,7 +87,7 @@ class _ProjectsViewState extends State<ProjectsView> {
   Future<void> _openCreate() async {
     final project = await showDialog<ProjectFinance>(
       context: context,
-      builder: (context) => const ProjectEditorDialog(),
+      builder: (context) => ProjectEditorDialog(clients: _clients),
     );
     if (project != null) widget.onAddProject(project);
   }
@@ -52,7 +95,10 @@ class _ProjectsViewState extends State<ProjectsView> {
   Future<void> _openEdit(ProjectFinance project) async {
     final edited = await showDialog<ProjectFinance>(
       context: context,
-      builder: (context) => ProjectEditorDialog(project: project),
+      builder: (context) => ProjectEditorDialog(
+        project: project,
+        clients: _clients,
+      ),
     );
     if (edited != null) widget.onUpdateProject(edited);
   }
@@ -84,6 +130,7 @@ class _ProjectsViewState extends State<ProjectsView> {
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered;
+    _scrollToFocusedProject();
 
     return AppPage(
       title: 'Dự án',
@@ -126,7 +173,8 @@ class _ProjectsViewState extends State<ProjectsView> {
                 const SizedBox(width: 8),
                 _FilterBtn(
                     label: 'Rủi ro cao',
-                    count: widget.projects.where((p) => p.riskScore >= 55).length,
+                    count:
+                        widget.projects.where((p) => p.riskScore >= 55).length,
                     value: ProjectFilter.highRisk,
                     selected: _filter,
                     onChanged: (f) => setState(() => _filter = f)),
@@ -152,10 +200,18 @@ class _ProjectsViewState extends State<ProjectsView> {
             )
           else
             ...filtered.map(
-              (p) => ProjectDetailPanel(
-                project: p,
-                onEdit: () => _openEdit(p),
-                onDelete: () => _confirmDelete(p),
+              (p) => KeyedSubtree(
+                key: _projectKeys.putIfAbsent(p.id, GlobalKey.new),
+                child: ProjectDetailPanel(
+                  key: ValueKey(
+                    'project-${p.id}-${widget.focusedProjectId == p.id}',
+                  ),
+                  project: p,
+                  initiallyExpanded: widget.focusedProjectId == p.id,
+                  onEdit: () => _openEdit(p),
+                  onDelete: () => _confirmDelete(p),
+                  onPayFull: () => widget.onPayFull(p),
+                ),
               ),
             ),
         ],
@@ -240,32 +296,43 @@ class ProjectDetailPanel extends StatefulWidget {
   const ProjectDetailPanel({
     super.key,
     required this.project,
+    this.initiallyExpanded = false,
     required this.onEdit,
     required this.onDelete,
+    required this.onPayFull,
   });
 
   final ProjectFinance project;
+  final bool initiallyExpanded;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onPayFull;
 
   @override
   State<ProjectDetailPanel> createState() => _ProjectDetailPanelState();
 }
 
 class _ProjectDetailPanelState extends State<ProjectDetailPanel> {
-  bool _expanded = false;
+  late bool _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.initiallyExpanded;
+  }
 
   @override
   Widget build(BuildContext context) {
     final p = widget.project;
     final scoreColor = riskScoreColor(p.riskScore);
+    final paymentColor = p.progressPaymentGap > 0
+        ? const Color(0xFFEF4444)
+        : const Color(0xFF10B981);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: cardDecoration(
-        borderColor: p.riskScore >= 55
-            ? const Color(0xFFFECACA)
-            : null,
+        borderColor: p.riskScore >= 55 ? const Color(0xFFFECACA) : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -281,7 +348,8 @@ class _ProjectDetailPanelState extends State<ProjectDetailPanel> {
                     color: scoreColor.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(categoryIcon(p.category), size: 18, color: scoreColor),
+                  child: Icon(categoryIcon(p.category),
+                      size: 18, color: scoreColor),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -307,6 +375,12 @@ class _ProjectDetailPanelState extends State<ProjectDetailPanel> {
                   ),
                 ),
                 IconButton(
+                  icon: const Icon(Icons.done_all_rounded, size: 18),
+                  onPressed: p.isCompletedAndPaid ? null : widget.onPayFull,
+                  tooltip: 'Thanh toán toàn bộ',
+                  color: const Color(0xFF10B981),
+                ),
+                IconButton(
                   icon: const Icon(Icons.edit_outlined, size: 18),
                   onPressed: widget.onEdit,
                   tooltip: 'Sửa',
@@ -327,27 +401,46 @@ class _ProjectDetailPanelState extends State<ProjectDetailPanel> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(99),
-                  child: LinearProgressIndicator(
-                    value: p.progress,
-                    minHeight: 8,
-                    backgroundColor: const Color(0xFFE5E7EB),
-                    color: scoreColor,
-                  ),
-                ),
+                _RatioBar(value: p.progress, color: scoreColor),
                 const SizedBox(height: 6),
                 Row(
                   children: [
                     Text(
                       '${(p.progress * 100).round()}% hoàn thành',
-                      style: const TextStyle(
-                          fontSize: 12, color: Colors.black45),
+                      style:
+                          const TextStyle(fontSize: 12, color: Colors.black45),
                     ),
                     const Spacer(),
                     StatusChip(status: p.status),
                     const SizedBox(width: 6),
                     RiskScoreBadge(score: p.riskScore),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _RatioBar(value: p.paymentProgress, color: paymentColor),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Text(
+                      '${(p.paymentProgress * 100).round()}% đã thu',
+                      style:
+                          const TextStyle(fontSize: 12, color: Colors.black45),
+                    ),
+                    const Spacer(),
+                    Chip(
+                      avatar: Icon(
+                        p.workMode == ProjectWorkMode.team
+                            ? Icons.groups_outlined
+                            : Icons.person_outline_rounded,
+                        size: 14,
+                      ),
+                      label: Text(
+                        p.workMode == ProjectWorkMode.team
+                            ? '${p.teamMembers.length} thành viên'
+                            : 'Cá nhân',
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
                   ],
                 ),
               ],
@@ -378,9 +471,8 @@ class _ProjectDetailPanelState extends State<ProjectDetailPanel> {
                   child: MiniStat(
                     label: 'Còn lại',
                     value: formatMoney(p.remaining),
-                    valueColor: p.remaining > 0
-                        ? const Color(0xFFF59E0B)
-                        : null,
+                    valueColor:
+                        p.remaining > 0 ? const Color(0xFFF59E0B) : null,
                   ),
                 ),
                 Expanded(
@@ -395,6 +487,62 @@ class _ProjectDetailPanelState extends State<ProjectDetailPanel> {
               ],
             ),
           ),
+
+          if (p.workMode == ProjectWorkMode.team)
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF4F6FC),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Nhóm ${p.teamSharePercent.toStringAsFixed(0)}% · ${formatMoney(p.teamShareTotal)}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      Text(
+                        'Phần của tôi: ${formatMoney(p.ownerContractShare)}',
+                        style: const TextStyle(
+                          color: Color(0xFF2563EB),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: p.teamMembers
+                        .map(
+                          (member) => Chip(
+                            avatar: Icon(
+                              p.memberPayable(member) <= 0
+                                  ? Icons.check_circle_rounded
+                                  : Icons.schedule_rounded,
+                              color: p.memberPayable(member) <= 0
+                                  ? const Color(0xFF10B981)
+                                  : const Color(0xFFF59E0B),
+                              size: 16,
+                            ),
+                            label: Text(
+                              '${member.name} · ${member.sharePercent.toStringAsFixed(0)}% · chờ ${formatMoney(p.memberPayable(member))}',
+                            ),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ],
+              ),
+            ),
 
           // ── Expand button ──
           InkWell(
@@ -418,8 +566,7 @@ class _ProjectDetailPanelState extends State<ProjectDetailPanel> {
                 children: [
                   Text(
                     _expanded ? 'Ẩn chi tiết' : 'Xem chi tiết rủi ro',
-                    style: const TextStyle(
-                        fontSize: 12, color: Colors.black45),
+                    style: const TextStyle(fontSize: 12, color: Colors.black45),
                   ),
                   Icon(
                     _expanded
@@ -442,6 +589,29 @@ class _ProjectDetailPanelState extends State<ProjectDetailPanel> {
 }
 
 // ── Risk Detail Panel ─────────────────────────────────────────────────────────
+
+class _RatioBar extends StatelessWidget {
+  const _RatioBar({
+    required this.value,
+    required this.color,
+  });
+
+  final double value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(99),
+      child: LinearProgressIndicator(
+        value: value.clamp(0, 1).toDouble(),
+        minHeight: 8,
+        backgroundColor: const Color(0xFFE5E7EB),
+        color: color,
+      ),
+    );
+  }
+}
 
 class _RiskDetailPanel extends StatelessWidget {
   const _RiskDetailPanel({required this.project});
@@ -484,6 +654,13 @@ class _RiskDetailPanel extends StatelessWidget {
             detail: p.hasDeposit
                 ? 'Đã nhận ${formatMoney(p.depositReceived)}'
                 : 'Chưa nhận cọc',
+          ),
+          _RiskFactorRow(
+            label: 'Tiền theo tiến độ',
+            ok: p.progressPaymentGap <= 0.05,
+            detail: p.progressPaymentGap > 0.05
+                ? 'Tiến độ đang vượt tiền đã thu'
+                : 'Tiền đã thu theo kịp tiến độ',
           ),
           _RiskFactorRow(
             label: 'Thay đổi phạm vi',
@@ -649,9 +826,14 @@ class _RiskFactorRow extends StatelessWidget {
 // ── Project Editor Dialog ─────────────────────────────────────────────────────
 
 class ProjectEditorDialog extends StatefulWidget {
-  const ProjectEditorDialog({super.key, this.project});
+  const ProjectEditorDialog({
+    super.key,
+    this.project,
+    this.clients = const [],
+  });
 
   final ProjectFinance? project;
+  final List<String> clients;
 
   @override
   State<ProjectEditorDialog> createState() => _ProjectEditorDialogState();
@@ -664,6 +846,7 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
   late final TextEditingController _totalValue;
   late final TextEditingController _paidAmount;
   late final TextEditingController _dueDate;
+  late final TextEditingController _deliveryDate;
   late final TextEditingController _startDate;
   late final TextEditingController _notes;
   late double _progress;
@@ -673,6 +856,11 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
   late bool _hasDeposit;
   late int _scopeChanges;
   late int _overdueDays;
+  late final List<String> _existingClients;
+  String? _selectedClient;
+  late bool _isNewClient;
+  late ProjectWorkMode _workMode;
+  final List<_TeamMemberDraft> _teamMembers = [];
 
   bool get _isEditing => widget.project != null;
 
@@ -680,13 +868,26 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
   void initState() {
     super.initState();
     final p = widget.project;
+    _existingClients = widget.clients
+        .map((client) => client.trim())
+        .where((client) => client.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     _name = TextEditingController(text: p?.name ?? '');
     _client = TextEditingController(text: p?.client ?? '');
+    _selectedClient = _existingClients.contains(p?.client) ? p?.client : null;
+    _isNewClient = _existingClients.isEmpty ||
+        (p != null && !_existingClients.contains(p.client));
+    if (!_isNewClient && _selectedClient != null) {
+      _client.text = _selectedClient!;
+    }
     _totalValue = TextEditingController(
         text: p == null ? '' : p.totalValue.toStringAsFixed(0));
     _paidAmount = TextEditingController(
         text: p == null ? '0' : p.paidAmount.toStringAsFixed(0));
     _dueDate = TextEditingController(text: p?.dueDate ?? '');
+    _deliveryDate = TextEditingController(text: p?.deliveryDate ?? '');
     _startDate = TextEditingController(text: p?.startDate ?? '');
     _notes = TextEditingController(text: p?.notes ?? '');
     _progress = p?.progress ?? 0;
@@ -696,6 +897,10 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
     _hasDeposit = p?.hasDeposit ?? false;
     _scopeChanges = p?.scopeChangeCount ?? 0;
     _overdueDays = p?.overdueDays ?? 0;
+    _workMode = p?.workMode ?? ProjectWorkMode.solo;
+    _teamMembers.addAll(
+      (p?.teamMembers ?? const []).map(_TeamMemberDraft.fromMember),
+    );
   }
 
   @override
@@ -705,15 +910,54 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
     _totalValue.dispose();
     _paidAmount.dispose();
     _dueDate.dispose();
+    _deliveryDate.dispose();
     _startDate.dispose();
     _notes.dispose();
+    for (final member in _teamMembers) {
+      member.dispose();
+    }
     super.dispose();
   }
 
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (_workMode == ProjectWorkMode.team && _teamMembers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Dự án nhóm cần có ít nhất một thành viên.'),
+        ),
+      );
+      return;
+    }
     final total = parseMoney(_totalValue.text);
     final paid = parseMoney(_paidAmount.text).clamp(0, total).toDouble();
+    final members = _workMode == ProjectWorkMode.team
+        ? _teamMembers.map((member) => member.toMember()).toList()
+        : const <TeamMember>[];
+    final teamSharePercent = members.fold<double>(
+      0,
+      (sum, member) => sum + member.sharePercent,
+    );
+    if (teamSharePercent > 100) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tổng tỷ lệ chia cho nhóm không được vượt 100%.'),
+        ),
+      );
+      return;
+    }
+    final ownerNetReceived = paid * (1 - teamSharePercent / 100);
+    final initialPayments = widget.project?.clientPayments ??
+        (paid > 0
+            ? [
+                ClientPayment(
+                  id: 'payment-${DateTime.now().microsecondsSinceEpoch}',
+                  amount: paid,
+                  receivedAt: DateTime.now(),
+                  kind: ClientPaymentKind.deposit,
+                ),
+              ]
+            : const <ClientPayment>[]);
     final project = ProjectFinance(
       id: widget.project?.id ??
           'project-${DateTime.now().microsecondsSinceEpoch}',
@@ -722,8 +966,11 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
       totalValue: total,
       depositReceived: widget.project?.depositReceived ?? paid,
       paidAmount: paid,
-      reserveAmount: widget.project?.reserveAmount ?? paid * 0.2,
+      reserveAmount: _isEditing
+          ? (widget.project?.reserveAmount ?? ownerNetReceived * 0.2)
+          : ownerNetReceived * 0.2,
       dueDate: _dueDate.text.trim(),
+      deliveryDate: _deliveryDate.text.trim(),
       startDate: _startDate.text.trim(),
       progress: _progress,
       risk: ProjectRisk.medium,
@@ -735,6 +982,10 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
       hasDeposit: _hasDeposit,
       scopeChangeCount: _scopeChanges,
       overdueDays: _overdueDays,
+      workMode: _workMode,
+      teamMembers: members,
+      clientPayments: initialPayments,
+      teamPayouts: widget.project?.teamPayouts ?? const [],
     );
     Navigator.pop(context, project);
   }
@@ -745,11 +996,63 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
   String? _moneyValidator(String? v) =>
       parseMoney(v ?? '') <= 0 ? 'Nhập số tiền hợp lệ.' : null;
 
+  String? _requiredDate(String? value) {
+    final text = value?.trim() ?? '';
+    final match = RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{4})$').firstMatch(text);
+    if (match == null) return 'Nhập đúng định dạng dd/MM/yyyy.';
+    final day = int.tryParse(match.group(1)!);
+    final month = int.tryParse(match.group(2)!);
+    final year = int.tryParse(match.group(3)!);
+    if (day == null || month == null || year == null) {
+      return 'Ngày không hợp lệ.';
+    }
+    final date = DateTime(year, month, day);
+    if (date.day != day || date.month != month || date.year != year) {
+      return 'Ngày không hợp lệ.';
+    }
+    return null;
+  }
+
+  String? _optionalDate(String? value) {
+    return (value ?? '').trim().isEmpty ? null : _requiredDate(value);
+  }
+
+  void _selectExistingClient(String? client) {
+    if (client == null) return;
+    setState(() {
+      _selectedClient = client;
+      _isNewClient = false;
+      _client.text = client;
+    });
+  }
+
+  void _createNewClient() {
+    setState(() {
+      _isNewClient = true;
+      _client.clear();
+    });
+  }
+
+  void _addTeamMember() {
+    setState(() => _teamMembers.add(_TeamMemberDraft.empty()));
+  }
+
+  void _removeTeamMember(int index) {
+    final member = _teamMembers.removeAt(index);
+    member.dispose();
+    setState(() {});
+  }
+
+  double get _teamSharePercent => _teamMembers.fold<double>(
+        0,
+        (sum, member) => sum + (double.tryParse(member.sharePercent.text) ?? 0),
+      );
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 700),
+        constraints: const BoxConstraints(maxWidth: 680, maxHeight: 760),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -795,21 +1098,23 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
                       ),
                       const SizedBox(height: 12),
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
-                            child: TextFormField(
+                            child: _ClientPicker(
+                              clients: _existingClients,
+                              selectedClient: _selectedClient,
+                              isNewClient: _isNewClient,
                               controller: _client,
                               validator: _required,
-                              decoration: const InputDecoration(
-                                labelText: 'Khách hàng *',
-                                prefixIcon: Icon(Icons.business_outlined),
-                              ),
+                              onSelectClient: _selectExistingClient,
+                              onCreateNew: _createNewClient,
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: DropdownButtonFormField<ProjectCategory>(
-                              value: _category,
+                              initialValue: _category,
                               decoration: const InputDecoration(
                                 labelText: 'Loại',
                                 prefixIcon: Icon(Icons.category_outlined),
@@ -830,6 +1135,78 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
                       ),
                       const SizedBox(height: 16),
 
+                      const _SectionLabel(label: 'Cách thực hiện'),
+                      const SizedBox(height: 10),
+                      SegmentedButton<ProjectWorkMode>(
+                        segments: const [
+                          ButtonSegment(
+                            value: ProjectWorkMode.solo,
+                            icon: Icon(Icons.person_outline_rounded),
+                            label: Text('Làm một mình'),
+                          ),
+                          ButtonSegment(
+                            value: ProjectWorkMode.team,
+                            icon: Icon(Icons.groups_outlined),
+                            label: Text('Làm theo nhóm'),
+                          ),
+                        ],
+                        selected: {_workMode},
+                        onSelectionChanged: (value) {
+                          setState(() {
+                            _workMode = value.first;
+                            if (_workMode == ProjectWorkMode.team &&
+                                _teamMembers.isEmpty) {
+                              _teamMembers.add(_TeamMemberDraft.empty());
+                            }
+                          });
+                        },
+                      ),
+                      if (_workMode == ProjectWorkMode.team) ...[
+                        const SizedBox(height: 12),
+                        ...List.generate(
+                          _teamMembers.length,
+                          (index) => _TeamMemberEditor(
+                            key: ValueKey(_teamMembers[index].id),
+                            index: index,
+                            draft: _teamMembers[index],
+                            onChanged: () => setState(() {}),
+                            onRemove: () => _removeTeamMember(index),
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _addTeamMember,
+                          icon: const Icon(Icons.person_add_alt_1_rounded),
+                          label: const Text('Thêm thành viên'),
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF4F6FC),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Chia cho nhóm: ${_teamSharePercent.toStringAsFixed(0)}%',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                              Text(
+                                'Phần của tôi: ${(100 - _teamSharePercent).clamp(0, 100).toStringAsFixed(0)}%',
+                                style: const TextStyle(
+                                  color: Color(0xFF2563EB),
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+
                       // ── Tài chính ──
                       const _SectionLabel(label: 'Tài chính'),
                       const SizedBox(height: 10),
@@ -842,7 +1219,8 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
                               validator: _moneyValidator,
                               decoration: const InputDecoration(
                                 labelText: 'Giá trị HĐ *',
-                                prefixIcon: Icon(Icons.monetization_on_outlined),
+                                prefixIcon:
+                                    Icon(Icons.monetization_on_outlined),
                                 suffixText: '₫',
                               ),
                             ),
@@ -867,6 +1245,7 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
                           Expanded(
                             child: TextFormField(
                               controller: _startDate,
+                              validator: _optionalDate,
                               decoration: const InputDecoration(
                                 labelText: 'Ngày bắt đầu',
                                 prefixIcon: Icon(Icons.play_circle_outline),
@@ -878,7 +1257,7 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
                           Expanded(
                             child: TextFormField(
                               controller: _dueDate,
-                              validator: _required,
+                              validator: _requiredDate,
                               decoration: const InputDecoration(
                                 labelText: 'Hạn thanh toán *',
                                 prefixIcon: Icon(Icons.event_outlined),
@@ -887,6 +1266,16 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _deliveryDate,
+                        validator: _optionalDate,
+                        decoration: const InputDecoration(
+                          labelText: 'Hạn bàn giao cho khách',
+                          prefixIcon: Icon(Icons.assignment_turned_in_outlined),
+                          hintText: 'dd/MM/yyyy',
+                        ),
                       ),
                       const SizedBox(height: 16),
 
@@ -898,8 +1287,7 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
                           Expanded(
                             child: Slider(
                               value: _progress,
-                              onChanged: (v) =>
-                                  setState(() => _progress = v),
+                              onChanged: (v) => setState(() => _progress = v),
                               divisions: 20,
                               label: '${(_progress * 100).round()}%',
                             ),
@@ -908,8 +1296,8 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
                             width: 48,
                             child: Text(
                               '${(_progress * 100).round()}%',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w800),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800),
                             ),
                           ),
                         ],
@@ -934,8 +1322,7 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
                             child: _CheckTile(
                               label: 'Đã nhận cọc',
                               value: _hasDeposit,
-                              onChanged: (v) =>
-                                  setState(() => _hasDeposit = v),
+                              onChanged: (v) => setState(() => _hasDeposit = v),
                             ),
                           ),
                         ],
@@ -984,14 +1371,14 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
                       ),
                       const SizedBox(height: 10),
                       const Text('Đánh giá khách hàng',
-                          style: TextStyle(fontSize: 12, color: Colors.black54)),
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.black54)),
                       const SizedBox(height: 6),
                       Row(
                         children: List.generate(
                           5,
                           (i) => GestureDetector(
-                            onTap: () =>
-                                setState(() => _clientRating = i + 1),
+                            onTap: () => setState(() => _clientRating = i + 1),
                             child: Icon(
                               i < _clientRating
                                   ? Icons.star_rounded
@@ -1050,6 +1437,256 @@ class _ProjectEditorDialogState extends State<ProjectEditorDialog> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _TeamMemberDraft {
+  _TeamMemberDraft({
+    required this.id,
+    required String name,
+    required String responsibility,
+    required String specialty,
+    required String sharePercent,
+    required this.paidBeforeMigration,
+  })  : name = TextEditingController(text: name),
+        responsibility = TextEditingController(text: responsibility),
+        specialty = TextEditingController(text: specialty),
+        sharePercent = TextEditingController(text: sharePercent);
+
+  factory _TeamMemberDraft.empty() => _TeamMemberDraft(
+        id: 'member-${DateTime.now().microsecondsSinceEpoch}',
+        name: '',
+        responsibility: '',
+        specialty: '',
+        sharePercent: '',
+        paidBeforeMigration: 0,
+      );
+
+  factory _TeamMemberDraft.fromMember(TeamMember member) => _TeamMemberDraft(
+        id: member.id,
+        name: member.name,
+        responsibility: member.responsibility,
+        specialty: member.specialty,
+        sharePercent: member.sharePercent.toStringAsFixed(0),
+        paidBeforeMigration: member.paidBeforeMigration,
+      );
+
+  final String id;
+  final TextEditingController name;
+  final TextEditingController responsibility;
+  final TextEditingController specialty;
+  final TextEditingController sharePercent;
+  final double paidBeforeMigration;
+
+  TeamMember toMember() => TeamMember(
+        id: id,
+        name: name.text.trim(),
+        responsibility: responsibility.text.trim(),
+        specialty: specialty.text.trim(),
+        sharePercent: double.tryParse(sharePercent.text) ?? 0,
+        paidBeforeMigration: paidBeforeMigration,
+      );
+
+  void dispose() {
+    name.dispose();
+    responsibility.dispose();
+    specialty.dispose();
+    sharePercent.dispose();
+  }
+}
+
+class _TeamMemberEditor extends StatelessWidget {
+  const _TeamMemberEditor({
+    super.key,
+    required this.index,
+    required this.draft,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  final int index;
+  final _TeamMemberDraft draft;
+  final VoidCallback onChanged;
+  final VoidCallback onRemove;
+
+  String? _required(String? value) =>
+      (value ?? '').trim().isEmpty ? 'Không được bỏ trống.' : null;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Thành viên ${index + 1}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Xóa thành viên',
+                onPressed: onRemove,
+                icon: const Icon(Icons.delete_outline_rounded),
+                color: const Color(0xFFEF4444),
+              ),
+            ],
+          ),
+          TextFormField(
+            controller: draft.name,
+            validator: _required,
+            decoration: const InputDecoration(
+              labelText: 'Tên thành viên *',
+              prefixIcon: Icon(Icons.person_outline_rounded),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: draft.responsibility,
+            validator: _required,
+            decoration: const InputDecoration(
+              labelText: 'Phụ trách phần việc *',
+              hintText: 'Ví dụ: Thiết kế giao diện, lập trình backend',
+              prefixIcon: Icon(Icons.task_alt_rounded),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: draft.specialty,
+                  validator: _required,
+                  decoration: const InputDecoration(
+                    labelText: 'Lĩnh vực / chuyên môn *',
+                    prefixIcon: Icon(Icons.category_outlined),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextFormField(
+                  controller: draft.sharePercent,
+                  onChanged: (_) => onChanged(),
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    final percent = double.tryParse(value ?? '');
+                    if (percent == null || percent <= 0 || percent > 100) {
+                      return 'Nhập tỷ lệ từ 0 đến 100.';
+                    }
+                    return null;
+                  },
+                  decoration: const InputDecoration(
+                    labelText: 'Tỷ lệ được chia *',
+                    prefixIcon: Icon(Icons.percent_rounded),
+                    suffixText: '%',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.only(top: 10),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline_rounded,
+                    size: 17, color: Colors.black45),
+                SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    'Mỗi lần khách thanh toán, thành viên sẽ được hưởng đúng tỷ lệ này.',
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ClientPicker extends StatelessWidget {
+  const _ClientPicker({
+    required this.clients,
+    required this.selectedClient,
+    required this.isNewClient,
+    required this.controller,
+    required this.validator,
+    required this.onSelectClient,
+    required this.onCreateNew,
+  });
+
+  final List<String> clients;
+  final String? selectedClient;
+  final bool isNewClient;
+  final TextEditingController controller;
+  final FormFieldValidator<String> validator;
+  final ValueChanged<String?> onSelectClient;
+  final VoidCallback onCreateNew;
+
+  @override
+  Widget build(BuildContext context) {
+    if (clients.isEmpty) {
+      return TextFormField(
+        controller: controller,
+        validator: validator,
+        decoration: const InputDecoration(
+          labelText: 'Khách hàng *',
+          prefixIcon: Icon(Icons.business_outlined),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DropdownButtonFormField<String>(
+          initialValue: isNewClient ? null : selectedClient,
+          decoration: const InputDecoration(
+            labelText: 'Khách hàng cũ',
+            prefixIcon: Icon(Icons.business_outlined),
+          ),
+          hint: const Text('Chọn khách hàng'),
+          items: clients
+              .map(
+                (client) => DropdownMenuItem(
+                  value: client,
+                  child: Text(client),
+                ),
+              )
+              .toList(),
+          validator: (_) => isNewClient ? null : validator(controller.text),
+          onChanged: onSelectClient,
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: onCreateNew,
+          icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
+          label: const Text('Tạo khách hàng mới'),
+        ),
+        if (isNewClient) ...[
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: controller,
+            validator: validator,
+            decoration: const InputDecoration(
+              labelText: 'Tên khách hàng mới *',
+              prefixIcon: Icon(Icons.edit_outlined),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -1113,9 +1750,7 @@ class _CheckTile extends StatelessWidget {
           children: [
             Icon(
               value ? Icons.check_box_rounded : Icons.check_box_outline_blank,
-              color: value
-                  ? const Color(0xFF10B981)
-                  : Colors.black26,
+              color: value ? const Color(0xFF10B981) : Colors.black26,
               size: 20,
             ),
             const SizedBox(width: 8),
@@ -1160,8 +1795,7 @@ class _CounterField extends StatelessWidget {
         children: [
           IconButton(
             icon: const Icon(Icons.remove, size: 16),
-            onPressed:
-                value <= min ? null : () => onChanged(value - 1),
+            onPressed: value <= min ? null : () => onChanged(value - 1),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
@@ -1174,8 +1808,7 @@ class _CounterField extends StatelessWidget {
           ),
           IconButton(
             icon: const Icon(Icons.add, size: 16),
-            onPressed:
-                value >= max ? null : () => onChanged(value + 1),
+            onPressed: value >= max ? null : () => onChanged(value + 1),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
